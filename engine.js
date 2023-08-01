@@ -12,9 +12,22 @@ const findAll = async () => {
     const UsersDB = require("./models/userModel");
     const users = await UsersDB.find();
 
-    users.forEach((user) => {
+    const onArray=users.map((obj) => obj.botOn);
+    const cpArray=users.map((obj) => obj.total_CP);
+
+    
+    const allFalse = onArray.every((value) => value === false);
+    const allEntriesAreZero = cpArray.every((value) => value === 0);
+
+
+    if (allFalse || allEntriesAreZero) return setInterval(findAll, 60000)
+
+    users.forEach(async (user) => {
+      console.log(`${user.username} active`)
       if (user.botOn === true && user.total_CP !== 0) {
         const { TwitterApi } = require("twitter-api-v2");
+
+        if(!user.APIKEY||!user.APISECRET||!user.ACCESSTOKEN||!user.ACCESSSECRET) return null
 
         const client = new TwitterApi({
           appKey: user.APIKEY,
@@ -83,9 +96,12 @@ const findAll = async () => {
 
         setInterval(findAll, user.tweetInterval);
       } else {
+        
         console.log(
+
           `Bot not active for ${user.username} BOTSTAT: ${user.botOn}   BOT CP: ${user.total_CP}`
         );
+        
       }
     });
   } catch (err) {
