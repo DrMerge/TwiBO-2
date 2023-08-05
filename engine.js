@@ -3,109 +3,102 @@ const express = require("express");
 const { format } = require("date-fns");
 const mongoose = require("mongoose");
 const connectDB = require("./config/dbConnect");
-
+const { TwitterApi } = require("twitter-api-v2");
+const fsPromise= require('fs').promises
+const path= require("path")
 // Connect to MongoDB
 connectDB();
 
 const findAll = async () => {
+  
   try {
     const UsersDB = require("./models/userModel");
-    const users = await UsersDB.find();
+    const users = await UsersDB.find({ botOn: true, total_CP: { $ne: 0 } });
 
-    const onArray=users.map((obj) => obj.botOn);
-    const cpArray=users.map((obj) => obj.total_CP);
+    if (users.length === 0) {
 
-    
-    const allFalse = onArray.every((value) => value === false);
-    const allEntriesAreZero = cpArray.every((value) => value === 0);
+      fsPromise.appendFile(path.join(__dirname,"log","terminal.txt"),"no users active \n \n","utf-8")
+      
+      setTimeout(findAll, 60000);
+      return;
+    }
 
+    for (const user of users) {
+      console.log(`${user.username} active`);
 
-    if (allFalse || allEntriesAreZero) return setInterval(findAll, 60000)
+      if (
+        !user.APIKEY ||
+        !user.APISECRET ||
+        !user.ACCESSTOKEN ||
+        !user.ACCESSSECRET
+      )
+        return null;
 
-    users.forEach(async (user) => {
-      console.log(`${user.username} active`)
-      if (user.botOn === true && user.total_CP !== 0) {
-        const { TwitterApi } = require("twitter-api-v2");
+      const client = new TwitterApi({
+        appKey: user.APIKEY,
+        appSecret: user.APISECRET,
+        accessToken: user.ACCESSTOKEN,
+        accessSecret: user.ACCESSSECRET,
+      });
 
-        if(!user.APIKEY||!user.APISECRET||!user.ACCESSTOKEN||!user.ACCESSSECRET) return null
+      const bearer = new TwitterApi(user.BEARER_TOKEN);
 
-        const client = new TwitterApi({
-          appKey: user.APIKEY,
-          appSecret: user.APISECRET,
-          accessToken: user.ACCESSTOKEN,
-          accessSecret: user.ACCESSSECRET,
-        });
+      const twitterClient = client.readWrite;
+      const twitterBearer = bearer.readOnly;
 
-        const bearer = new TwitterApi(user.BEARER_TOKEN);
+      const generate = async () => {
+        try {
+          const openai = require("./gpt3Client.js");
+          const response = await openai.createCompletion({
+            model: "text-davinci-003",
+            prompt: `Read past tweets ${user.tweet}, ${user.prompt} without repeating past tweets`,
+            temperature: 1,
+            max_tokens: 256,
+            top_p: 1,
+            frequency_penalty: 0,
+            presence_penalty: 0,
+          });
 
-        const twitterClient = client.readWrite;
-        const twitterBearer = bearer.readOnly;
+          const data = response.data.choices[0].text;
+          const currentDateAndTime = format(new Date(), "yyyy-MM-dd HH:mm:ss");
 
-        const generate = async () => {
-          try {
-            const openai = require("./gpt3Client.js");
-            const response = await openai.createCompletion({
-              model: "text-davinci-003",
-              prompt: `Read past tweets ${user.tweet}, ${user.prompt} without repeating past tweets`,
-              temperature: 1,
-              max_tokens: 256,
-              top_p: 1,
-              frequency_penalty: 0,
-              presence_penalty: 0,
-            });
+          const tweetObject = {
+            tweetText: data,
+            time: currentDateAndTime,
+          };
 
-            const data = response.data.choices[0].text;
-            const currentDateAndTime = format(
-              new Date(),
-              "yyyy-MM-dd HH:mm:ss"
-            );
+          user.tweet.push(tweetObject);
 
-            const tweetObject = {
-              tweetText: data,
-              time: currentDateAndTime,
-            };
+          const result = await user.save();
 
-            user.tweet.push(tweetObject);
+          console.log(data);
 
-            const result = await user.save();
+          const tweet = async () => {
+            try {
+              const tweetResult = await twitterClient.v2.tweet(data);
 
-            console.log(data);
+              if (!tweetResult.errors) {
+                user.total_CP = user.total_CP - 1;
+                const resultCP = await user.save();
 
-            const tweet = async () => {
-              try {
-                const tweetResult = await twitterClient.v2.tweet(data);
-
-                if (!tweetResult.errors) {
-                  user.total_CP = user.total_CP - 1;
-                  const resultCP = await user.save();
-
-                  console.log("Tweet Successful, CP deducted!!");
-                }
-              } catch (e) {
-                console.log("Error tweeting:", e);
+                console.log("Tweet Successful, CP deducted!!");
               }
-            };
+            } catch (e) {
+              console.log("Error tweeting:", e);
+            }
+          };
 
-            tweet();
-          } catch (err) {
-            console.log("Error generating AI response:", err);
-          }
-        };
+          await tweet();
+        } catch (err) {
+          console.log("Error generating AI response:", err);
+        }
+      };
 
-        generate();
-
-        setInterval(findAll, user.tweetInterval);
-      } else {
-        
-        console.log(
-
-          `Bot not active for ${user.username} BOTSTAT: ${user.botOn}   BOT CP: ${user.total_CP}`
-        );
-        
-      }
-    });
+      await generate();
+      setTimeout(findAll, user.tweetInterval);
+    }
   } catch (err) {
-    console.log("Error fetching users:", err);
+    console.log("Error fetching users:", err.message);
   }
 };
 
