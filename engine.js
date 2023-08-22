@@ -10,7 +10,7 @@ const PROJECT_ID = "websapp-385302";
 const MODEL_ID = "text-bison@001";
 
 const accessToken =
-  "ya29.a0AbVbY6PAT7hLugnb8ue6Vcgzk9Hooc1OM17PQgfbnP5DtDDMhhttjyBglXugw7_9Qtk2CNmW427KkuxWFIeOGAd1cPOr_45hfoZmQ3e-yjcKiAni8swPoUhroJxj7NETH2JnFcSvKCfGs1diX2IpPqb5vv3LSDYWpEd60C4V6VZ24bS8DXZvd8ZPrZjcObEUGrlyG0DL9kOuoaJUfuIZaaPW5HBHUkEgjVqnKK-WdQM9vVaFIfOkG13fJH4i9ZRrGE1BpTlTnX4KwJ1GKnYzfzaFXxsE47aGodiv_Rzn9jJtDP0xDprgFUgz8YcP9pudA_fT6Htgaz_ewGc2EN6QTlpaJvnHvfZtTS_0u6b6qOjc5t5FWW9g5X8HVC0QPrMV5uEhK9agBLZ4Q9rdVMPHarO3iQaCgYKAV4SARMSFQFWKvPl5MWLLXZvc9xQzYFpOixyWw0417";
+  "ya29.a0AfB_byBAgnnRN_ZHdORAvSuq1nJQY27LI7F5fC006NcxsvKfXUR0DsTsoSj6bvjloSt1CaFORyymuf062SBGlALnxkHh2RkBlAmRTZPAL_PYu-GuImYV77h12zX-aAxVKM0OToMluxFeVWsmoePb5He7g6DamPIHVgCKHQaCgYKAUkSARMSFQHsvYlsmJ27CVT5Li7DwVN4okcW_w0173";
 
 // Connect to MongoDB
 connectDB();
@@ -22,7 +22,7 @@ const findAll = async () => {
 
     users.forEach(async (user) => {
       const tweetTextArray = user.tweet.map((text) => text.tweetText.trim());
-
+      console.log(user.prompt);
       console.log(`${user.username} active`);
       const { TwitterApi } = require("twitter-api-v2");
 
@@ -56,11 +56,11 @@ const findAll = async () => {
           const data = {
             instances: [
               {
-                content: `${user.prompt} without repeating any of these, ${tweetTextArray} `,
+                content: `${user.prompt} `,
               },
             ],
             parameters: {
-              temperature: 1,
+              temperature: 0.3,
               maxOutputTokens: 256,
               topP: 0.8,
               topK: 40,
@@ -105,7 +105,11 @@ const findAll = async () => {
         }
       };
 
-      generate();
+      await generate();
+
+      setInterval(async () => {
+        await findAll();
+      }, user.tweetInterval);
     });
   } catch (err) {
     console.log("Error fetching users:", err);
