@@ -4,21 +4,23 @@ const { format } = require("date-fns");
 const mongoose = require("mongoose");
 const connectDB = require("./config/dbConnect");
 const { TwitterApi } = require("twitter-api-v2");
-const fsPromise= require('fs').promises
-const path= require("path")
+const fsPromise = require("fs").promises;
+const path = require("path");
 // Connect to MongoDB
 connectDB();
 
 const findAll = async () => {
-  
   try {
     const UsersDB = require("./models/userModel");
     const users = await UsersDB.find({ botOn: true, total_CP: { $ne: 0 } });
 
     if (users.length === 0) {
+      fsPromise.appendFile(
+        path.join(__dirname, "log", "terminal.txt"),
+        "no users active \n \n",
+        "utf-8"
+      );
 
-      fsPromise.appendFile(path.join(__dirname,"log","terminal.txt"),"no users active \n \n","utf-8")
-      
       setTimeout(findAll, 60000);
       return;
     }
@@ -94,8 +96,21 @@ const findAll = async () => {
         }
       };
 
-      await generate();
-      setTimeout(findAll, user.tweetInterval);
+      generate();
+
+      const recheck = async () => {
+        const userRECHECKED = await UsersDB.findOne({
+          username: user.username,
+        }).exec();
+
+        if (userRECHECKED.botOn && userRECHECKED.total_CP) {
+          generate();
+        } else {
+          recheck();
+        }
+      };
+
+      setTimeout(recheck, user.tweetInterval);
     }
   } catch (err) {
     console.log("Error fetching users:", err.message);
